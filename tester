@@ -1,0 +1,144 @@
+import random
+import sounddevice as sd
+import speech_recognition as sr
+from googletrans import Translator
+from scipy.io.wavfile import write
+ 
+SAMPLE_RATE = 16000
+WAV_FILE = "answer.wav"
+ 
+translator = Translator()
+WORDS = {
+    "easy": ["яблоко", "кошка", "собака", "дом", "вода", "книга", "солнце", "друг"],
+    "medium": ["школа", "компьютер", "окно", "дорога", "семья", "город", "погода", "музыка"],
+    "hard": ["ответственность", "достижение", "образование", "разработчик", "независимость"],
+}
+LEVELS = {
+    "1": {"name": "Лёгкий 🟢", "key": "easy", "lives": 5, "seconds": 5, "mult": 1},
+    "2": {"name": "Средний 🟡", "key": "medium", "lives": 3, "seconds": 4, "mult": 2},
+    "3": {"name": "Сложный 🔴", "key": "hard", "lives": 2, "seconds": 4, "mult": 3},
+}
+ 
+BANNER = """
+  ╔══════════════════════════════════════╗
+  ║  🎤  ПЕРЕВЕДИ СЛОВО ГОЛОСОМ  🇷🇺 ➜ en║
+  ╚══════════════════════════════════════╝
+"""
+ 
+GAME_OVER_ART = r"""
+   ____    _    __  __ _____    _____     _______ ____
+  / ___|  / \  |  \/  | ____|  / _ \ \   / / ____|  _ \
+ | |  _  / _ \ | |\/| |  _|   | | | \ \ / /|  _| | |_) |
+ | |_| |/ ___ \| |  | | |___  | |_| |\ V / | |___|  _ <
+  \____/_/   \_\_|  |_|_____|  \___/  \_/  |_____|_| \_\
+"""
+ 
+ 
+def translate(word):
+    """Русское слово -> английский перевод (через googletrans)."""
+    return translator.translate(word, src="ru", dest="en").text.lower().strip()
+ 
+ 
+def listen(seconds):
+    """Записываем голос и распознаём английскую речь."""
+    print(f"🔴 Говорите! Запись {seconds} сек...")
+    audio = sd.rec(int(seconds * SAMPLE_RATE), samplerate=SAMPLE_RATE,
+                   channels=1, dtype="int16")
+    sd.wait()
+    write(WAV_FILE, SAMPLE_RATE, audio)
+    print("⏹️  Запись окончена, распознаю...")
+ 
+    recognizer = sr.Recognizer()
+    with sr.AudioFile(WAV_FILE) as source:
+        data = recognizer.record(source)
+    try:
+        return recognizer.recognize_google(data, language="en-US").lower().strip()
+    except sr.UnknownValueError:
+        return ""  
+ 
+ 
+def hearts(lives):
+    return "❤️ " * lives
+ 
+ 
+def choose_level():
+    print("Выбери уровень сложности:")
+    for number, level in LEVELS.items():
+        print(f"  {number} — {level['name']} (жизней: {level['lives']}, "
+              f"время: {level['seconds']} сек, очки ×{level['mult']})")
+    while True:
+        choice = input("👉 Твой выбор (1/2/3): ")
+        if choice in LEVELS:
+            return LEVELS[choice]
+        print("❌ Введи 1, 2 или 3.")
+ 
+ 
+def get_rank(score):
+    if score >= 150:
+        return "🏆"
+    if score >= 80:
+        return "🥇"
+    if score >= 30:
+        return "🥈 "
+    return "🥉"
+ 
+ 
+def play():
+    print(BANNER)
+    print("   Правильно — очки, ошибка — минус жизнь. Серия ответов даёт бонус 🔥\n")
+ 
+    level = choose_level()
+    lives = level["lives"]
+    score = 0
+    streak = 0
+    correct = 0
+    total = 0
+ 
+    words = WORDS[level["key"]]
+    random.shuffle(words)
+ 
+    for ru_word in words:
+        if lives == 0:
+            break
+        total += 1
+        answer = translate(ru_word)
+ 
+        print("\n" + "─" * 40)
+        print(f"{hearts(lives)}  ⭐ Очки: {score}  🔥 Серия: {streak}")
+        print(f"\n📝 Слово №{total}:  【 {ru_word.upper()} 】")
+        input("▶️  Нажми Enter и сразу говори перевод...")
+ 
+        heard = listen(level["seconds"])
+        if heard == "":
+            print("🤷 Я ничего не расслышал.")
+        else:
+            print(f"👂 Я услышал: «{heard}»")
+ 
+        if answer in heard and heard != "":
+            streak += 1
+            correct += 1
+            points = 10 * level["mult"] + (streak - 1) * 2  # бонус за серию
+            score += points
+            print(f"✅ Верно! +{points} очков 🎉")
+        else:
+            streak = 0
+            lives -= 1
+            print(f"❌ Неверно! Правильный ответ: {answer}")
+ 
+    if lives == 0:
+        print(GAME_OVER_ART)
+        print("💀 Жизни закончились!")
+    else:
+        print("\n🎊 Ты прошёл все слова уровня! 🎊")
+ 
+    print(f"📊 Правильных ответов: {correct} из {total}")
+    print(f"⭐ Итоговые очки: {score}")
+    print(get_rank(score))
+ 
+ 
+while True:
+    play()
+    again = input("\n🔁 Сыграть ещё раз? (да/нет): ").lower()
+    if again != "да":
+        print("👋 Спасибо за игру! Пока!")
+        break
